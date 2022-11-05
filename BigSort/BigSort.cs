@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using BigSort.Comparators;
+using BigSort.Model;
 
 namespace BigSort;
 
@@ -9,30 +10,44 @@ public class BigSort
     public static async Task Run(string[] args)
     {
         var chunkSize = 10000;
-        var st = new Stopwatch();
-        st.Start();
+        //var st = new Stopwatch();
+      //  st.Start();
         var files = await SeparateFileToChunk(args[0], chunkSize);
-        st.Stop();
-        Console.WriteLine($"SeparateFileToChunk: {st.Elapsed} ms");
-        await MergeSort(files, new List<string>(), new LineComparator(), args[0]);
+      //  st.Stop();
+     //   Console.WriteLine($"SeparateFileToChunk: {st.Elapsed} ms");
+         MergeSort(files, new List<string>(), new LineComparator(), args[0]);
     }
 
-    static async Task MergeSort(List<string> files, List<string> resultFiles, LineComparator lineComparator,
+    static void  MergeSort(List<string> files, List<string> resultFiles, LineComparator lineComparator,
         string startFile)
     {
-        var lisfOfTasks = new List<Task<string>>();
+      //  var lisfOfTasks = new List<Task<string>>();
+      var counter = 0;
+      for (var i = 0; i < files.Count; i += 2)
+      {
+          counter++;
+      }
+
+      var cg = new ConcurrentBag<string>();
+      using var countdownEvent = new CountdownEvent(counter);
         for (var i = 0; i < files.Count; i += 2)
         {
+            
             var file1 = files[i];
             var file2 = i + 1 < files.Count ? files[i + 1] : null;
-            var task = Task<string>.Factory.StartNew(() => MergeWithSort(file1, file2, lineComparator),TaskCreationOptions.LongRunning);
-
-
-            lisfOfTasks.Add(task);
+            var tp = new TaskParam
+            {
+                LineComparator = lineComparator,
+                InputFirstFile = file1,
+                InputSecondFile = file2,
+                OutputFiles = cg,
+                CountdownEvent = countdownEvent
+            };
+            ThreadPool.QueueUserWorkItem(MergeWithSort,tp);
+           
         }
-
-        var newFiles = await Task.WhenAll(lisfOfTasks);
-        resultFiles.AddRange(newFiles);
+        countdownEvent.Wait();
+        resultFiles.AddRange(cg);
 
         if (resultFiles.Count == 1)
         {
@@ -41,15 +56,23 @@ public class BigSort
         else
         {
             files.Clear();
-            await MergeSort(resultFiles, files, lineComparator, startFile);
+            MergeSort(resultFiles, files, lineComparator, startFile);
         }
     }
 
-    static string MergeWithSort(string filePath, string? secondFilePath, LineComparator lineComparator)
+    static void MergeWithSort(object o)
     {
+        var tp = (TaskParam) o;
+        var filePath = tp.InputFirstFile;
+        var secondFilePath = tp.InputSecondFile;
+        var lineComparator = tp.LineComparator;
+        var cg = tp.OutputFiles;
+        var countdownEvent = tp.CountdownEvent;
         if (secondFilePath == null)
         {
-            return filePath;
+            cg.Add(filePath);
+            countdownEvent.Signal();
+            return;
         }
 
         var resultFile = Guid.NewGuid().ToString() + ".txt";
@@ -95,7 +118,8 @@ public class BigSort
         File.Delete(filePath);
         File.Delete(secondFilePath);
 
-        return resultFile;
+        cg.Add(resultFile);
+        countdownEvent.Signal();
     }
 
     static async Task<List<string>> SeparateFileToChunk(string fileName, int chunkSize)

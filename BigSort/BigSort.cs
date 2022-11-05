@@ -25,7 +25,7 @@ public class BigSort
         {
             var file1 = files[i];
             var file2 = i + 1 < files.Count ? files[i + 1] : null;
-            var task = Task<string>.Run(() => MergeWithSort(file1, file2, lineComparator));
+            var task = Task<string>.Factory.StartNew(() => MergeWithSort(file1, file2, lineComparator),TaskCreationOptions.LongRunning);
 
 
             lisfOfTasks.Add(task);
@@ -117,7 +117,7 @@ public class BigSort
                 i++;
             }
 
-            var task = Task.Run(() => ChunkNumber(listOfChunk, chunkNumber, files));
+            var task = Task.Factory.StartNew(() => ChunkNumber(listOfChunk, chunkNumber, files),TaskCreationOptions.LongRunning);
             tasks.Add(task);
         }
 
